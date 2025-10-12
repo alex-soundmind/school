@@ -37,32 +37,57 @@ try {
 // --- ЛОГИКА ОБРАБОТКИ ДАННЫХ (POST-ЗАПРОСЫ) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $is_logged_in) {
     $data = [];
+    
+    // *** НАЧАЛО: СЕРВЕРНАЯ ВАЛИДАЦИЯ ***
     foreach ($columns as $col) {
-        if ($col === $pk && empty($_POST[$pk])) continue;
-        if (isset($_POST[$col])) {
-            $data[$col] = $_POST[$col] === '' ? null : $_POST[$col];
+        if ($col === $pk) continue; // Не валидируем PK
+
+        $value = $_POST[$col] ?? '';
+
+        // Проверка на обязательные поля (все, кроме PK, считаем обязательными)
+        if ($value === '') {
+            $errors[] = "Поле '" . translate($col) . "' не может быть пустым.";
+        }
+
+        // Проверка числовых полей
+        if (str_ends_with($col, '_id') || in_array($col, ['experience'])) {
+            if (!filter_var($value, FILTER_VALIDATE_INT) && $value !== '') {
+                $errors[] = "Поле '" . translate($col) . "' должно быть целым числом.";
+            }
+        }
+        
+        // Проверка email
+        if ($col === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = "Неверный формат E-mail.";
+        }
+
+        $data[$col] = $value === '' ? null : $value;
+    }
+    // *** КОНЕЦ: СЕРВЕРНАЯ ВАЛИДАЦИЯ ***
+
+    if (empty($errors)) { // Если ошибок нет, сохраняем в БД
+        try {
+            if ($action === 'create') {
+                $cols = implode(', ', array_keys($data));
+                $placeholders = implode(', ', array_fill(0, count($data), '?'));
+                $stmt = $pdo->prepare("INSERT INTO $table ($cols) VALUES ($placeholders)");
+                $stmt->execute(array_values($data));
+            } elseif ($action === 'edit' && $id) {
+                // Если редактируем пользователя и пароль пустой - не обновляем его
+                if ($table === 'users' && empty($data['password'])) {
+                    unset($data['password']);
+                }
+                $set_clauses = implode(', ', array_map(fn($k) => "$k = ?", array_keys($data)));
+                $stmt = $pdo->prepare("UPDATE $table SET $set_clauses WHERE $pk = ?");
+                $stmt->execute([...array_values($data), $id]);
+            }
+            header("Location: index.php?table=$table");
+            exit;
+        } catch (PDOException $e) {
+            $errors[] = 'Ошибка сохранения данных: ' . $e->getMessage();
         }
     }
-    
-    try {
-        if ($action === 'create') {
-            unset($data[$pk]); // Убираем первичный ключ при создании
-            $cols = implode(', ', array_keys($data));
-            $placeholders = implode(', ', array_fill(0, count($data), '?'));
-            $stmt = $pdo->prepare("INSERT INTO $table ($cols) VALUES ($placeholders)");
-            $stmt->execute(array_values($data));
-        } elseif ($action === 'edit' && $id) {
-            $set_clauses = implode(', ', array_map(fn($k) => "$k = ?", array_keys($data)));
-            $stmt = $pdo->prepare("UPDATE $table SET $set_clauses WHERE $pk = ?");
-            $stmt->execute([...array_values($data), $id]);
-        }
-    } catch (PDOException $e) {
-        // Можно добавить более детальную обработку ошибок
-        die('<p class="error">Ошибка сохранения данных: ' . $e->getMessage() . '</p>');
-    }
-    
-    header("Location: index.php?table=$table");
-    exit;
+    // Если есть ошибки, скрипт продолжит выполнение и отобразит форму с ошибками
 }
 
 // --- ЛОГИКА УДАЛЕНИЯ (GET-ЗАПРОС) ---
