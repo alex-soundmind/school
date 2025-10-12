@@ -5,7 +5,7 @@ session_start();
 // --- ОБЩИЕ ПЕРЕМЕННЫЕ ---
 $is_logged_in = isset($_SESSION['user']);
 $action = $_GET['action'] ?? 'list'; // 'list', 'create', 'edit', 'delete'
-$table = $_GET['table'] ?? 'trams';
+$table = $_GET['table'] ?? 'students';
 $id = $_GET['id'] ?? null;
 
 // --- СЛОВАРЬ ТАБЛИЦ ---
